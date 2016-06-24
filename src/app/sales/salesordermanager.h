@@ -30,6 +30,9 @@ private slots:
     void closeTab(int index);
     void closeCurrentTab();
     void closeAllTabs();
+    void onAdded(qlonglong id);
+    void onSaved(qlonglong id);
+    void onRemoved(qlonglong id);
 
 private:
 

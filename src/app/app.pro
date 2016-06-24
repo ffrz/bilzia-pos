@@ -2,7 +2,7 @@ QT = core gui network widgets sql printsupport
 TARGET = bilzia-pos
 TEMPLATE = app
 DESTDIR = $$PWD/../../dist
-
+RC_FILE += app.rc
 SOURCES += \
     main.cpp\
     mainwindow.cpp \

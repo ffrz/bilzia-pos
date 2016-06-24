@@ -12,6 +12,7 @@
 
 SalesOrderModel::SalesOrderModel(QObject* parent)
     : QAbstractTableModel(parent)
+    , stateFilter(-1)
 {
 }
 
@@ -76,8 +77,9 @@ QVariant SalesOrderModel::data(const QModelIndex& index, int role) const
     return QVariant();
 }
 
-void SalesOrderModel::refreshAll(int stateFilter)
+void SalesOrderModel::refreshAll(int pStateFilter)
 {
+    stateFilter = pStateFilter;
     QString sql = SELECT_COLUMNS_FROM_SALES_ORDERS;
 
     if (stateFilter >= 0)
@@ -89,9 +91,15 @@ void SalesOrderModel::refreshAll(int stateFilter)
 
     beginResetModel();
     items.clear();
+    rowById.clear();
 
-    while (q.next())
-        items.append(createItem(q));
+    int row = 0;
+    while (q.next()) {
+        const QVector<QVariant> item = createItem(q);
+        items.append(item);
+        rowById.insert(item.at(IdColumn).toLongLong(), row);
+        row++;
+    }
 
     endResetModel();
 }
@@ -102,4 +110,18 @@ QVector<QVariant> SalesOrderModel::createItem(QSqlQuery &q)
     for (int col = 0; col < columnCount(); col++)
         item[col] = q.value(col);
     return item;
+}
+
+void SalesOrderModel::refresh(qlonglong id)
+{
+    QString sql = SELECT_COLUMNS_FROM_SALES_ORDERS " where id=" + QString::number(id);
+
+    if (stateFilter >= 0)
+        sql.append(" and state=" + QString::number(stateFilter));
+
+    QSqlQuery q;
+    q.prepare(sql);
+    q.exec();
+    q.next();
+
 }

@@ -27,11 +27,14 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const;
 
     void refreshAll(int stateFilter);
+    void refresh(qlonglong id);
 
 private:
     QVector<QVariant> createItem(QSqlQuery &q);
 
     QList<QVector<QVariant>> items;
+    QHash<qlonglong, int> rowById;
+    int stateFilter;
 };
 
 #endif // SALESORDERMODEL_H
