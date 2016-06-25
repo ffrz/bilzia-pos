@@ -147,6 +147,4 @@ void SalesOrderModel::refresh(qlonglong id)
     const QModelIndex idx = index(row, 0);
     emit dataChanged(idx, idx.sibling(row, columnCount() - 1));
     return;
-
-
 }
