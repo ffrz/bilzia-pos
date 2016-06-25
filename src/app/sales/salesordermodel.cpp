@@ -122,6 +122,31 @@ void SalesOrderModel::refresh(qlonglong id)
     QSqlQuery q;
     q.prepare(sql);
     q.exec();
-    q.next();
+    int row = rowById.value(id, -1);
+
+    if (!q.next()) {
+        if (row >= 0) {
+            beginRemoveRows(QModelIndex(), row, row);
+            rowById.remove(id);
+            items.removeAt(row);
+            endRemoveRows();
+        }
+        return;
+    }
+
+    if (row == -1) {
+        row = rowCount();
+        beginInsertRows(QModelIndex(), row, row);
+        rowById.insert(id, row);
+        items.append(createItem(q));
+        endInsertRows();
+        return;
+    }
+
+    items[row] = createItem(q);
+    const QModelIndex idx = index(row, 0);
+    emit dataChanged(idx, idx.sibling(row, columnCount() - 1));
+    return;
+
 
 }

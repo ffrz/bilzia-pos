@@ -208,8 +208,10 @@ void SalesOrderManager::closeAllTabs()
 void SalesOrderManager::onAdded(qlonglong id)
 {
     SalesOrderEditor* editor = static_cast<SalesOrderEditor*>(sender());
-    editorById.insert(id, editor);
     tabWidget->setTabText(tabWidget->indexOf(editor), editor->windowTitle());
+
+    editorById.insert(id, editor);
+
     model->refresh(id);
 }
 
@@ -221,4 +223,6 @@ void SalesOrderManager::onSaved(qlonglong id)
 void SalesOrderManager::onRemoved(qlonglong id)
 {
     closeTab(tabWidget->indexOf(editorById.value(id)));
+
+    model->refresh(id);
 }

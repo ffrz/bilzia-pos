@@ -32,6 +32,8 @@ public:
     qlonglong id;
 
 private:
+    class Model;
+
     void updateWindowTitle();
 
     QLabel* infoLabel;
@@ -43,6 +45,8 @@ private:
     QDateTimeEdit* openDateTimeEdit;
     QComboBox* stateComboBox;
     QLineEdit* totalEdit;
+
+    Model* model;
 };
 
 #endif // SALESORDEREDITOR_H
