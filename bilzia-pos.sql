@@ -21,3 +21,8 @@ create table sales_order_details (
   price double not null default 0,
   profit double not null default 0
 );
+
+create table products (
+  id integer primary key,
+  name varchar(100) unique not null default ''
+);
