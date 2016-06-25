@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "sales/salesordereditorproductmodel.h"
 
 #include <QTimer>
 #include <QApplication>
@@ -20,6 +21,7 @@ int main(int argc, char** argv)
     MainWindow mainWindow;
 
     QTimer::singleShot(0, &mainWindow, SLOT(showMaximized()));
+    QTimer::singleShot(0, new SalesOrderEditor::ProductModel(&app), SLOT(refresh()));
 
     int exitCode = app.exec();
 

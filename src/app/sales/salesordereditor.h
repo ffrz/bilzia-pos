@@ -13,6 +13,9 @@ class SalesOrderEditor : public QWidget
 {
     Q_OBJECT
 public:
+    class Model;
+    class Delegate;
+    class ProductModel;
     SalesOrderEditor(qlonglong id, QWidget* parent);
 
 signals:
@@ -36,9 +39,6 @@ public:
 private:
     void updateWindowTitle();
     void setInfoLabel(const QDateTime& lastmod);
-
-    class Model;
-    class Delegate;
 
     QLabel* infoLabel;
     QTableView* view;

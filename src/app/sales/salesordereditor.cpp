@@ -1,4 +1,5 @@
 #include "salesordereditor.h"
+#include "salesordereditorproductmodel.h"
 
 #include <QMessageBox>
 #include <QColor>
@@ -20,7 +21,6 @@
 #include <QPlainTextEdit>
 #include <QAbstractTableModel>
 #include <QStyledItemDelegate>
-#include <QSqlQueryModel>
 #include <QCompleter>
 
 class SalesOrderEditor::Model : public QAbstractTableModel
@@ -259,7 +259,7 @@ public:
             q.exec();
         }
 
-        for (const Item item: items) {
+        for (Item& item: items) {
             if (item.id == 0) {
                 q.prepare("insert into sales_order_details("
                           " parent_id, name, quantity, cost, price, profit"
@@ -285,7 +285,17 @@ public:
             q.bindValue(":quantity", item.quantity);
             q.bindValue(":profit", (item.quantity * item.price) - item.quantity * item.cost);
             q.exec();
+
+            if (item.id == 0) {
+                item.id = q.lastInsertId().toLongLong();
+            }
+
+            q.prepare("insert or ignore into products (name) values (:name)");
+            q.bindValue(":name", item.name);
+            q.exec();
         }
+
+        ProductModel::instance()->refresh();
     }
 
     bool removeRows(int row, int /*count*/, const QModelIndex &parent = QModelIndex())
@@ -307,13 +317,9 @@ public:
 class SalesOrderEditor::Delegate : public QStyledItemDelegate
 {
 public:
-    QSqlQueryModel* productCompleterModel;
-
     Delegate(QObject* parent)
         : QStyledItemDelegate(parent)
     {
-        productCompleterModel = new QSqlQueryModel(this);
-        productCompleterModel->setQuery("select name from sales_order_details group by name order by name asc");
     }
 
     QWidget* createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
@@ -324,7 +330,7 @@ public:
             editor->setFrame(false);
 
             QCompleter* completer = new QCompleter(editor);
-            completer->setModel(productCompleterModel);
+            completer->setModel(ProductModel::instance());
             completer->setCaseSensitivity(Qt::CaseInsensitive);
             completer->setFilterMode(Qt::MatchContains);
             completer->setCompletionMode(QCompleter::PopupCompletion);
