@@ -25,16 +25,20 @@ public slots:
     void init();
     void save();
     void remove();
+    void removeCurrentItem();
     void print();
     void printPreview();
+    void updateTotal();
 
 public:
     qlonglong id;
 
 private:
-    class Model;
-
     void updateWindowTitle();
+    void setInfoLabel(const QDateTime& lastmod);
+
+    class Model;
+    class Delegate;
 
     QLabel* infoLabel;
     QTableView* view;
@@ -47,6 +51,7 @@ private:
     QLineEdit* totalEdit;
 
     Model* model;
+    Delegate* delegate;
 };
 
 #endif // SALESORDEREDITOR_H

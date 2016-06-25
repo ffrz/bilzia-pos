@@ -1,9 +1,9 @@
 #include "salesordereditor.h"
 
+#include <QMessageBox>
+#include <QColor>
 #include <QTimer>
 #include <QSqlQuery>
-#include <QSqlError>
-#include <QDebug>
 #include <QMessageBox>
 #include <QToolBar>
 #include <QBoxLayout>
@@ -19,11 +19,16 @@
 #include <QCheckBox>
 #include <QPlainTextEdit>
 #include <QAbstractTableModel>
+#include <QStyledItemDelegate>
+#include <QSqlQueryModel>
+#include <QCompleter>
 
 class SalesOrderEditor::Model : public QAbstractTableModel
 {
+    Q_OBJECT
 public:
     qlonglong orderId;
+    double total;
 
     enum Column {
         IdColumn,
@@ -50,11 +55,33 @@ public:
         double price;
     };
     QList<Item> items;
+    QList<qlonglong> deletedIds;
 
+signals:
+    void totalChanged();
+
+public:
     Model(qlonglong orderId, QObject* parent)
         : QAbstractTableModel(parent)
         , orderId(orderId)
-    {}
+        , total(0)
+    {
+        if (orderId) {
+            QSqlQuery q;
+            q.prepare("select * from sales_order_details where parent_id=?");
+            q.bindValue(0, orderId);
+            q.exec();
+            while (q.next()) {
+                Item item;
+                item.id = q.value("id").toLongLong();
+                item.name = q.value("name").toString();
+                item.quantity = q.value("quantity").toInt();
+                item.cost = q.value("cost").toDouble();
+                item.price = q.value("price").toDouble();
+                items.append(item);
+            }
+        }
+    }
 
     Qt::ItemFlags flags(const QModelIndex &index) const
     {
@@ -115,6 +142,13 @@ public:
             default: return Qt::AlignVCenter ^ Qt::AlignLeft;
             }
         }
+        else if (role == Qt::BackgroundColorRole) {
+            if (item.price == item.cost)
+                return QColor("#ffffdd");
+            else if (item.price < item.cost) {
+                return QColor("#ffdddd");
+            }
+        }
 
         return QVariant();
     }
@@ -149,7 +183,7 @@ public:
             return false;
 
         if (index.column() == NameColumn) {
-            QString name = value.toString().trimmed();
+            QString name = value.toString();
             if (name.isEmpty())
                 return false;
 
@@ -170,36 +204,187 @@ public:
 
         Item &item = items[index.row()];
         if (index.column() == CostColumn) {
-            item.cost = QLocale().toDouble(value.toString());
+            double cost = value.toDouble();
+            if (item.cost == cost)
+                return true;
+
+            if (item.price != 0.0 && cost > item.price) {
+                QMessageBox::warning(0, "Peringatan", "Modal lebih besar dari harga, silahkan perbarui harga.");
+            }
+
+            item.cost = cost;
         }
         else if (index.column() == QuantityColumn) {
-            item.quantity = QLocale().toInt(value.toString());
+            int quantity = value.toInt();
+            if (item.quantity == quantity)
+                return true;
+            item.quantity = quantity;
             QModelIndex subTotalIndex = index.sibling(index.row(), SubTotalColumn);
             emit dataChanged(subTotalIndex, subTotalIndex);
+            updateTotal();
         }
         else if (index.column() == PriceColumn) {
-            item.price = QLocale().toInt(value.toString());
+            double price = value.toDouble();
+            if (item.price == price)
+                return true;
+            if (price < item.cost && confirmNegativeProfit())
+                return false;
+
+            item.price = price;
             QModelIndex subTotalIndex = index.sibling(index.row(), SubTotalColumn);
             emit dataChanged(subTotalIndex, subTotalIndex);
+            updateTotal();
         }
 
         emit dataChanged(index, index);
 
         return true;
     }
+
+    void updateTotal()
+    {
+        total = 0.;
+        for (const Item item: items) {
+            total += item.quantity * item.price;
+        }
+        emit totalChanged();
+    }
+
+    void save() {
+        QSqlQuery q;
+
+        for (qlonglong id: deletedIds) {
+            q.prepare("delete from sales_order_details where id=?");
+            q.bindValue(0, id);
+            q.exec();
+        }
+
+        for (const Item item: items) {
+            if (item.id == 0) {
+                q.prepare("insert into sales_order_details("
+                          " parent_id, name, quantity, cost, price, profit"
+                          ")values("
+                          ":parent_id,:name,:quantity,:cost,:price,:profit"
+                          ")");
+                q.bindValue(":parent_id", orderId);
+            }
+            else {
+                q.prepare("update sales_order_details set"
+                          " name=:name"
+                          ",quantity=:quantity"
+                          ",cost=:cost"
+                          ",price=:price"
+                          ",profit=:profit"
+                          " where id=:id");
+                q.bindValue(":id", item.id);
+            }
+
+            q.bindValue(":name", item.name);
+            q.bindValue(":cost", item.cost);
+            q.bindValue(":price", item.price);
+            q.bindValue(":quantity", item.quantity);
+            q.bindValue(":profit", (item.quantity * item.price) - item.quantity * item.cost);
+            q.exec();
+        }
+    }
+
+    bool removeRows(int row, int /*count*/, const QModelIndex &parent = QModelIndex())
+    {
+        beginRemoveRows(parent, row, row);
+        Item item = items.takeAt(row);
+        if (item.id != 0)
+            deletedIds.append(item.id);
+        endRemoveRows();
+        return true;
+    }
+
+    bool confirmNegativeProfit() const
+    {
+        return QMessageBox::question(0, "Konfirmasi", "Harga lebih kecil dari modal, lanjutkan perubahan?", "&Ya", "&Tidak");
+    }
+};
+
+class SalesOrderEditor::Delegate : public QStyledItemDelegate
+{
+public:
+    QSqlQueryModel* productCompleterModel;
+
+    Delegate(QObject* parent)
+        : QStyledItemDelegate(parent)
+    {
+        productCompleterModel = new QSqlQueryModel(this);
+        productCompleterModel->setQuery("select name from sales_order_details group by name order by name asc");
+    }
+
+    QWidget* createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        if (index.column() == Model::NameColumn) {
+            QLineEdit* editor = new QLineEdit(parent);
+            editor->setMaxLength(100);
+            editor->setFrame(false);
+
+            QCompleter* completer = new QCompleter(editor);
+            completer->setModel(productCompleterModel);
+            completer->setCaseSensitivity(Qt::CaseInsensitive);
+            completer->setFilterMode(Qt::MatchContains);
+            completer->setCompletionMode(QCompleter::PopupCompletion);
+            completer->setModelSorting(QCompleter::CaseInsensitivelySortedModel);
+            completer->popup()->setAlternatingRowColors(true);
+
+            editor->setCompleter(completer);
+            return editor;
+        }
+        else if (index.column() == Model::CostColumn || index.column() == Model::QuantityColumn || index.column() == Model::PriceColumn) {
+            QLineEdit* editor = new QLineEdit(parent);
+            QRegExpValidator* numberValidator = new QRegExpValidator(QRegExp("^((?:\\d+|\\d{1,3}(?:\\.\\d{3})*)?)$"), editor);
+            editor->setValidator(numberValidator);
+            editor->setMaxLength(10);
+            editor->setFrame(false);
+            editor->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            return editor;
+        }
+
+        return QStyledItemDelegate::createEditor(parent, option, index);
+    }
+
+    void setEditorData(QWidget* pEditor, const QModelIndex& index) const
+    {
+        if (index.column() == Model::NameColumn) {
+            QLineEdit* editor = static_cast<QLineEdit*>(pEditor);
+            editor->setText(index.data(Qt::EditRole).toString());
+        }
+        else if (index.column() == Model::CostColumn || index.column() == Model::QuantityColumn || index.column() == Model::PriceColumn) {
+            QLineEdit* editor = static_cast<QLineEdit*>(pEditor);
+            editor->setText(QLocale().toString(index.data(Qt::EditRole).toDouble(), 'f', 0));
+        }
+    }
+
+    void setModelData(QWidget* pEditor, QAbstractItemModel* model, const QModelIndex& index) const
+    {
+        if (index.column() == Model::NameColumn) {
+            QLineEdit* editor = static_cast<QLineEdit*>(pEditor);
+            model->setData(index, editor->text().trimmed());
+        }
+        else if (index.column() == Model::CostColumn || index.column() == Model::QuantityColumn || index.column() == Model::PriceColumn) {
+            QLineEdit* editor = static_cast<QLineEdit*>(pEditor);
+            model->setData(index, QLocale().toDouble(editor->text()));
+        }
+    }
+
 };
 
 SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
     : QWidget(parent)
     , id(id)
     , model(new Model(id, this))
+    , delegate(new Delegate(this))
 {
     QToolBar* toolBar = new QToolBar(this);
     toolBar->setIconSize(QSize(16, 16));
 
     QString actionToolTip("%1<br><b>%2</b>");
 
-    QAction* saveAction = toolBar->addAction(QIcon("_r/icons/document-save.png"), "", this, SLOT(save()));
+    QAction* saveAction = toolBar->addAction(QIcon("_r/icons/save.png"), "", this, SLOT(save()));
     saveAction->setShortcut(QKeySequence("Ctrl+S"));
     saveAction->setToolTip(actionToolTip.arg("Simpan order").arg("Ctrl+S"));
 
@@ -209,13 +394,13 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
     printAction->setShortcut(QKeySequence("Ctrl+P"));
     printAction->setToolTip(actionToolTip.arg("Cetak pesanan").arg("Ctrl+P"));
 
-    QAction* printPreviewAction = toolBar->addAction(QIcon("_r/icons/document-print-preview.png"), "", this, SLOT(printPreview()));
+    QAction* printPreviewAction = toolBar->addAction(QIcon("_r/icons/preview.png"), "", this, SLOT(printPreview()));
     printPreviewAction->setShortcut(QKeySequence("Ctrl+Shift+P"));
     printPreviewAction->setToolTip(actionToolTip.arg("Pratinjau cetak pesanan").arg("Ctrl+Shift+P"));
 
     toolBar->addSeparator();
 
-    QAction* removeAction = toolBar->addAction(QIcon("_r/icons/document-close.png"), "", this, SLOT(remove()));
+    QAction* removeAction = toolBar->addAction(QIcon("_r/icons/remove.png"), "", this, SLOT(remove()));
     removeAction->setShortcut(QKeySequence("Ctrl+Shift+Del"));
     removeAction->setToolTip(actionToolTip.arg("Hapus rekaman pesanan").arg("Ctrl+Shift+Del"));
 
@@ -259,12 +444,14 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
 
     view = new QTableView(this);
     view->setModel(model);
+    view->setItemDelegate(delegate);
     view->setCornerButtonEnabled(false);
     view->setAlternatingRowColors(true);
     view->setSelectionMode(QAbstractItemView::SingleSelection);
     view->setSelectionBehavior(QAbstractItemView::SelectItems);
     view->setTabKeyNavigation(false);
     view->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed | QAbstractItemView::DoubleClicked);
+    view->viewport()->setToolTip("Daftar produk. Ketuk tombol <b>Del</b> untuk menghapus produk yang dipilih.");
     QHeaderView* header = view->horizontalHeader();
     header->setHighlightSections(false);
     header = view->verticalHeader();
@@ -272,6 +459,10 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
     header->setDefaultSectionSize(20);
     header->setMinimumSectionSize(20);
     header->setMaximumSectionSize(20);
+
+    QAction* removeItemAction = new QAction(view);
+    removeItemAction->setShortcut(QKeySequence("Del"));
+    view->addAction(removeItemAction);
 
     infoLabel = new QLabel(this);
     infoLabel->setStyleSheet("font-style:italic;padding-bottom:1px;");
@@ -316,7 +507,11 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
         customerContactEdit->setText(q.value("customer_contact").toString());
         customerAddressEdit->setText(q.value("customer_address").toString());
         totalEdit->setText(QLocale().toString(q.value("grand_total").toDouble(), 'f', 0));
+        setInfoLabel(q.value("lastmod_datetime").toDateTime());
     }
+
+    connect(model, SIGNAL(totalChanged()), SLOT(updateTotal()));
+    connect(removeItemAction, SIGNAL(triggered(bool)), SLOT(removeCurrentItem()));
 
     updateWindowTitle();
     QTimer::singleShot(0, this, SLOT(init()));
@@ -345,6 +540,8 @@ void SalesOrderEditor::save()
         return;
     }
 
+    const QDateTime now = QDateTime::currentDateTime();
+
     QSqlDatabase db = QSqlDatabase::database();
     db.transaction();
 
@@ -354,11 +551,13 @@ void SalesOrderEditor::save()
         sql = "insert into sales_orders("
               " open_datetime, state,"
               " customer_name, customer_contact, customer_address,"
-              " grand_total"
+              " grand_total,"
+              " lastmod_datetime"
               ") values ("
               ":open_datetime,:state,"
               ":customer_name,:customer_contact,:customer_address,"
-              ":grand_total"
+              ":grand_total,"
+              ":lastmod_datetime"
               ")";
     }
     else {
@@ -369,6 +568,7 @@ void SalesOrderEditor::save()
               ",customer_contact=:customer_contact"
               ",customer_address=:customer_address"
               ",grand_total=:grand_total"
+              ",lastmod_datetime=:lastmod_datetime"
               " where id=:id";
     }
     q.prepare(sql);
@@ -378,6 +578,7 @@ void SalesOrderEditor::save()
     q.bindValue(":customer_contact", customerContactEdit->text().trimmed());
     q.bindValue(":customer_address", customerAddressEdit->text().trimmed());
     q.bindValue(":grand_total", QLocale().toDouble(totalEdit->text()));
+    q.bindValue(":lastmod_datetime", now);
 
     if (id)
         q.bindValue(":id", id);
@@ -392,9 +593,12 @@ void SalesOrderEditor::save()
         emitAddedSignal = true;
     }
 
+    model->save();
+
     if (!db.commit())
         db.rollback();
 
+    setInfoLabel(now);
     updateWindowTitle();
 
     if (emitAddedSignal)
@@ -414,6 +618,9 @@ void SalesOrderEditor::printPreview()
 
 void SalesOrderEditor::remove()
 {
+    if (QMessageBox::question(0, "Konfirmasi", QString("Hapus transaksi nomor %1?").arg(id), "&Ya", "&Tidak"))
+        return;
+
     QSqlDatabase db = QSqlDatabase::database();
     db.transaction();
 
@@ -422,8 +629,40 @@ void SalesOrderEditor::remove()
     q.bindValue(0, id);
     q.exec();
 
+    q.prepare("delete from sales_order_details where parent_id=?");
+    q.bindValue(0, id);
+    q.exec();
+
     db.commit();
 
     emit removed(id);
 }
 
+void SalesOrderEditor::updateTotal()
+{
+    totalEdit->setText(QLocale().toString(model->total, 'f', 0));
+}
+
+void SalesOrderEditor::removeCurrentItem()
+{
+    QModelIndexList indexes = view->selectionModel()->selectedIndexes();
+    if (indexes.isEmpty())
+        return;
+
+    int row = indexes.first().row();
+
+    if (row == model->rowCount() - 1)
+        return;
+
+    if (QMessageBox::question(0, "Konfirmasi", QString("Hapus produk <b>%1</b>?").arg(model->items[row].name), "&Ya", "&Tidak"))
+        return;
+
+    model->removeRow(row);
+}
+
+void SalesOrderEditor::setInfoLabel(const QDateTime& lastmod)
+{
+    infoLabel->setText(QString("Terakhir disimpan pada hari %1.").arg(lastmod.toString("dddd, dd MMMM yyyy hh:mm:ss")));
+}
+
+#include "salesordereditor.moc"
