@@ -27,7 +27,7 @@ SalesOrderManager::SalesOrderManager(QWidget* parent)
     QString actionTooltip("%1<br><b>%2</b>");
     QToolBar* toolBar = new QToolBar(container);
     toolBar->setIconSize(QSize(16, 16));
-    QAction* refreshAction = toolBar->addAction(QIcon("_r/icons/view-refresh.png"), "&Muat Ulang", this, SLOT(refresh()));
+    QAction* refreshAction = toolBar->addAction(QIcon("_r/icons/refresh.png"), "&Muat Ulang", this, SLOT(refresh()));
     refreshAction->setShortcut(QKeySequence("F5"));
     refreshAction->setToolTip(actionTooltip.arg("Muat ulang daftar pesanan").arg(refreshAction->shortcut().toString()));
 
