@@ -11,3 +11,13 @@ create table sales_orders (
     
     lastmod_datetime datetime not null default current_timestamp
 );
+
+create table sales_order_details (
+  id integer primary key,
+  parent_id integer,
+  name varchar(100),
+  quantity integer not null default 0,
+  cost double not null default 0,
+  price double not null default 0,
+  profit double not null default 0
+);
