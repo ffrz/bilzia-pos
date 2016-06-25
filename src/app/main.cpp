@@ -9,6 +9,8 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     app.setApplicationDisplayName("Bilzia Point of Sales");
 
+    QLocale::setDefault(QLocale(QLocale::Indonesian, QLocale::Indonesia));
+
     {
         QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
         db.setDatabaseName("bilzia-pos.sqlite3");
