@@ -1,0 +1,19 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resources/icons/ban.png</file>
+        <file>resources/icons/exclamation.png</file>
+        <file>resources/icons/information.png</file>
+        <file>resources/icons/minus.png</file>
+        <file>resources/icons/ok.png</file>
+        <file>resources/icons/ok-2.png</file>
+        <file>resources/icons/plus.png</file>
+        <file>resources/icons/print.png</file>
+        <file>resources/icons/question.png</file>
+        <file>resources/icons/refresh.png</file>
+        <file>resources/icons/close.png</file>
+        <file>resources/icons/close-2.png</file>
+        <file>resources/icons/settings.png</file>
+        <file>resources/icons/remove.png</file>
+        <file>resources/icons/save.png</file>
+    </qresource>
+</RCC>

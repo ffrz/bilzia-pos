@@ -8,6 +8,7 @@ class QTableView;
 class QDateTimeEdit;
 class QComboBox;
 class QLineEdit;
+class QPrinter;
 
 class SalesOrderEditor : public QWidget
 {
@@ -29,14 +30,14 @@ public slots:
     void save();
     void remove();
     void removeCurrentItem();
-    void print();
-    void printPreview();
+    void saveAndPrint();
     void updateTotal();
 
 public:
     qlonglong id;
 
 private:
+    void print(QPrinter* printer);
     void updateWindowTitle();
     void setInfoLabel(const QDateTime& lastmod);
 

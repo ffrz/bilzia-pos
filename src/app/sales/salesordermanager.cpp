@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QPushButton>
 
 SalesOrderManager::SalesOrderManager(QWidget* parent)
     : QSplitter(parent)
@@ -27,11 +28,11 @@ SalesOrderManager::SalesOrderManager(QWidget* parent)
     QString actionTooltip("%1<br><b>%2</b>");
     QToolBar* toolBar = new QToolBar(container);
     toolBar->setIconSize(QSize(16, 16));
-    QAction* refreshAction = toolBar->addAction(QIcon("_r/icons/refresh.png"), "&Muat Ulang", this, SLOT(refresh()));
+    QAction* refreshAction = toolBar->addAction(QIcon(":/resources/icons/refresh.png"), "&Muat Ulang", this, SLOT(refresh()));
     refreshAction->setShortcut(QKeySequence("F5"));
     refreshAction->setToolTip(actionTooltip.arg("Muat ulang daftar pesanan").arg(refreshAction->shortcut().toString()));
 
-    QAction* newAction = toolBar->addAction(QIcon("_r/icons/document-new.png"), "&Baru", this, SLOT(openEditor()));
+    QAction* newAction = toolBar->addAction(QIcon(":/resources/icons/plus.png"), "&Baru", this, SLOT(openEditor()));
     newAction->setShortcut(QKeySequence("Ctrl+N"));
     newAction->setToolTip(actionTooltip.arg("Pesanan baru").arg(newAction->shortcut().toString()));
 
@@ -162,7 +163,8 @@ void SalesOrderManager::openEditor(qlonglong id)
         connect(editor, SIGNAL(added(qlonglong)), SLOT(onAdded(qlonglong)));
         connect(editor, SIGNAL(removed(qlonglong)), SLOT(onRemoved(qlonglong)));
         connect(editor, SIGNAL(saved(qlonglong)), SLOT(onSaved(qlonglong)));
-        tabWidget->addTab(editor, editor->windowTitle());
+        int index = tabWidget->addTab(editor, editor->windowTitle());
+        tabWidget->tabBar()->tabButton(index, QTabBar::RightSide)->setToolTip("Tutup");
 
         if (id != 0)
             editorById.insert(id, editor);

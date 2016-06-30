@@ -1,3 +1,5 @@
+include(../global.pri)
+
 QT = core gui network widgets sql printsupport
 TARGET = bilzia-pos
 TEMPLATE = app

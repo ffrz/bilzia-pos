@@ -22,6 +22,33 @@
 #include <QAbstractTableModel>
 #include <QStyledItemDelegate>
 #include <QCompleter>
+#include <QPrintDialog>
+#include <QPrinter>
+#include <QTextFrame>
+#include <QTextDocument>
+#include <QPainter>
+#include <QPushButton>
+
+bool confirm(QWidget* parent, const QString& message, const QString& title = "Konfirmasi")
+{
+    QMessageBox dialog(parent);
+    dialog.setWindowTitle(title);
+    dialog.setText(message);
+    dialog.setIconPixmap(QPixmap::fromImage(QImage(":/resources/icons/question.png")));
+    dialog.addButton(new QPushButton(QIcon(":/resources/icons/ok.png"), "&Ya", &dialog), QMessageBox::AcceptRole);
+    dialog.addButton(new QPushButton(QIcon(":/resources/icons/close.png"), "&Tidak", &dialog), QMessageBox::RejectRole);
+    return dialog.exec();
+}
+
+void warn(QWidget* parent, const QString& message, const QString& title = "Peringatan")
+{
+    QMessageBox dialog(parent);
+    dialog.setWindowTitle(title);
+    dialog.setText(message);
+    dialog.setIconPixmap(QPixmap::fromImage(QImage(":/resources/icons/exclamation.png")));
+    dialog.addButton(new QPushButton(QIcon(":/resources/icons/ok.png"), "&OK", &dialog), QMessageBox::AcceptRole);
+    dialog.exec();
+}
 
 class SalesOrderEditor::Model : public QAbstractTableModel
 {
@@ -390,23 +417,17 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
 
     QString actionToolTip("%1<br><b>%2</b>");
 
-    QAction* saveAction = toolBar->addAction(QIcon("_r/icons/save.png"), "", this, SLOT(save()));
+    QAction* saveAction = toolBar->addAction(QIcon(":/resources/icons/save.png"), "", this, SLOT(save()));
     saveAction->setShortcut(QKeySequence("Ctrl+S"));
     saveAction->setToolTip(actionToolTip.arg("Simpan order").arg("Ctrl+S"));
 
-    toolBar->addSeparator();
-
-    QAction* printAction = toolBar->addAction(QIcon("_r/icons/document-print.png"), "", this, SLOT(print()));
+    QAction* printAction = toolBar->addAction(QIcon(":/resources/icons/print.png"), "", this, SLOT(saveAndPrint()));
     printAction->setShortcut(QKeySequence("Ctrl+P"));
-    printAction->setToolTip(actionToolTip.arg("Cetak pesanan").arg("Ctrl+P"));
-
-    QAction* printPreviewAction = toolBar->addAction(QIcon("_r/icons/preview.png"), "", this, SLOT(printPreview()));
-    printPreviewAction->setShortcut(QKeySequence("Ctrl+Shift+P"));
-    printPreviewAction->setToolTip(actionToolTip.arg("Pratinjau cetak pesanan").arg("Ctrl+Shift+P"));
+    printAction->setToolTip(actionToolTip.arg("Simpan dan cetak pesanan").arg("Ctrl+P"));
 
     toolBar->addSeparator();
 
-    QAction* removeAction = toolBar->addAction(QIcon("_r/icons/remove.png"), "", this, SLOT(remove()));
+    QAction* removeAction = toolBar->addAction(QIcon(":/resources/icons/remove.png"), "", this, SLOT(remove()));
     removeAction->setShortcut(QKeySequence("Ctrl+Shift+Del"));
     removeAction->setToolTip(actionToolTip.arg("Hapus rekaman pesanan").arg("Ctrl+Shift+Del"));
 
@@ -494,7 +515,6 @@ SalesOrderEditor::SalesOrderEditor(qlonglong id, QWidget* parent)
 
     if (id == 0) {
         printAction->setEnabled(false);
-        printPreviewAction->setEnabled(false);
         removeAction->setEnabled(false);
         openDateTimeEdit->setDateTime(QDateTime::currentDateTime());
         stateComboBox->setCurrentIndex(0);
@@ -542,7 +562,7 @@ void SalesOrderEditor::save()
     const QString customerName = customerNameEdit->text().trimmed();
     if (customerName.isEmpty()) {
         customerNameEdit->setFocus();
-        QMessageBox::warning(0, "Peringatan", "Nama pelanggan harus diisi.");
+        warn(this, "Nama pelanggan harus diisi.");
         return;
     }
 
@@ -613,15 +633,6 @@ void SalesOrderEditor::save()
     emit saved(id);
 }
 
-void SalesOrderEditor::print()
-{
-
-}
-
-void SalesOrderEditor::printPreview()
-{
-}
-
 void SalesOrderEditor::remove()
 {
     if (QMessageBox::question(0, "Konfirmasi", QString("Hapus transaksi nomor %1?").arg(id), "&Ya", "&Tidak"))
@@ -660,7 +671,7 @@ void SalesOrderEditor::removeCurrentItem()
     if (row == model->rowCount() - 1)
         return;
 
-    if (QMessageBox::question(0, "Konfirmasi", QString("Hapus produk <b>%1</b>?").arg(model->items[row].name), "&Ya", "&Tidak"))
+    if (confirm(this, QString("Hapus produk <b>%1</b>?").arg(model->items[row].name)))
         return;
 
     model->removeRow(row);
@@ -669,6 +680,218 @@ void SalesOrderEditor::removeCurrentItem()
 void SalesOrderEditor::setInfoLabel(const QDateTime& lastmod)
 {
     infoLabel->setText(QString("Terakhir disimpan pada hari %1.").arg(lastmod.toString("dddd, dd MMMM yyyy hh:mm:ss")));
+}
+
+void SalesOrderEditor::saveAndPrint()
+{
+    if (confirm(this, "Simpan dan cetak pesanan?"))
+        return;
+
+    save();
+
+    QPrintDialog dialog(this);
+    if (!dialog.exec())
+        return;
+
+    QPrinter* printer = dialog.printer();
+    if (!printer)
+        return;
+
+    printer->setFullPage(true);
+    printer->setPaperSize(QSizeF(210, 330 / 3), QPrinter::Millimeter);
+    printer->setPageMargins(0, 0, 0, 0, QPrinter::Millimeter);
+    print(printer);
+}
+
+void SalesOrderEditor::print(QPrinter *printer)
+{
+    QLocale locale;
+    QStringList rows;
+    for (int i = 0; i < model->items.size(); i++) {
+            const Model::Item item = model->items.at(i);
+            rows << QString(
+                        "<tr>"
+                        "<td align=right>%1</td>"
+                        "<td align=left>%2</td>"
+                        "<td align=right>%3</td>"
+                        "<td align=right>%4</td>"
+                        "<td align=right>%5</td>"
+                        "</tr>"
+                        )
+                    .arg(QString::number(i+1),
+                         item.name.toUpper(),
+                         locale.toString(item.quantity),
+                         locale.toString(item.price, 'f', 0),
+                         locale.toString(item.quantity * item.price, 'f', 0));
+    }
+
+    QString content = QString(
+                "<table width=100% cellpadding=2 cellspacing=0 border=0.3>"
+                    "<tr>"
+                        "<td align=center width=5%>NO</td>"
+                        "<td align=center>ITEM</td>"
+                        "<td align=center width=5%>QTY</td>"
+                        "<td align=center width=10%>HARGA (Rp.)</td>"
+                        "<td align=center width=12%>SUBTOTAL (Rp.)</td>"
+                    "</tr>"
+                    "%1"
+                    "<tr>"
+                        "<td align=right colspan=4>GRAND TOTAL (Rp.)</td>"
+                        "<td align=right>%2</td>"
+                    "</tr>"
+                "</table>"
+                )
+            .arg(rows.join(""), totalEdit->text());
+
+    QTextDocument doc;
+    QFont f = doc.defaultFont();
+    f.setFamily("Arial Narrow");
+    doc.setDefaultFont(f);
+    doc.setHtml(QString(
+                "<html>"
+                "<head></head>"
+                "<body>"
+                    "<table width=100% border=0 cellspacing=0>"
+                    "<tr>"
+                        "<td valign=middle align=center>{logo}</td>"
+                        "<td>"
+                            "<table width=100%>"
+                                "<tr><td><font size=20>{company}</font></td></tr>"
+                                "<tr><td>{headline}</td></tr>"
+                                "<tr><td>{address}</td></tr>"
+                            "</table>"
+                        "</td>"
+                        "<td>"
+                            "<table width=100%>"
+                                "<tr>"
+                                    "<td>Yth. Bpk/Ibu/Sdr</td><td>:</td><td>{customer_name}</td>"
+                                    "<td></td>"
+                                    "<td>No.</td><td>:</td><td>{order_id}</td>"
+                                "</tr>"
+                                "<tr>"
+                                    "<td>No. Telepon / HP</td><td>:</td><td>{customer_contact}</td>"
+                                    "<td></td>"
+                                    "<td>Tanggal</td><td>:</td><td>{order_date}</td>"
+                                "</tr>"
+                                "<tr>"
+                                    "<td>Alamat</td><td>:</td><td>{customer_address}</td>"
+                                    "<td></td>"
+                                    "<td></td><td></td><td></td>"
+                                "</tr>"
+                            "</table>"
+                        "</td>"
+                    "</tr>"
+                    "</table>"
+                    "<br>"
+                    "{content}"
+                    "<br>"
+                "<table width=100%>"
+                "<tr>"
+                    "<td align=center>Yang menerima<br><br><br><br>_______________</td>"
+                    "<td align=center>Yang menyerahkan<br><br><br><br>_______________</td>"
+                    "<td align=center>Hormat kami<br><br><br><br>_______________</td>"
+                "</tr>"
+                "</table>"
+                "</body>"
+                "</html>")
+                .replace("{content}", content));
+
+    printer->setDocName("Penjualan #" + idEdit->text());
+
+    QPainter p(printer);
+
+    if (!p.isActive())
+        return;
+
+    QTextOption opt = doc.defaultTextOption();
+    opt.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    doc.setDefaultTextOption(opt);
+
+    (void)doc.documentLayout(); // make sure that there is a layout
+
+    QAbstractTextDocumentLayout *layout = doc.documentLayout();
+    layout->setPaintDevice(p.device());
+
+    int dpiy = p.device()->logicalDpiY();
+    float mf = 0.7;
+    int margin = (int)((mf / 2.54) * dpiy); // 1 cm
+
+    QTextFrameFormat fmt = doc.rootFrame()->frameFormat();
+    fmt.setMargin(margin);
+
+    QRectF pageRect(printer->pageRect());
+    QRectF body = QRectF(0, 0, pageRect.width(), pageRect.height());
+    doc.setPageSize(body.size());
+    doc.rootFrame()->setFrameFormat(fmt);
+
+    int docCopies;
+    int pageCopies;
+    if (printer->collateCopies() == true) {
+        docCopies = 1;
+        pageCopies = printer->numCopies();
+    } else {
+        docCopies = printer->numCopies();
+        pageCopies = 1;
+    }
+
+    int fromPage = printer->fromPage();
+    int toPage = printer->toPage();
+    bool ascending = true;
+
+    if (fromPage == 0 && toPage == 0) {
+        fromPage = 1;
+        toPage = doc.pageCount();
+    }
+    // paranoia check
+    fromPage = qMax(1, fromPage);
+    toPage = qMin(doc.pageCount(), toPage);
+
+    if (printer->pageOrder() == QPrinter::LastPageFirst) {
+        int tmp = fromPage;
+        fromPage = toPage;
+        toPage = tmp;
+        ascending = false;
+    }
+
+    for (int i = 0; i < docCopies; ++i) {
+        int page = fromPage;
+        while (true) {
+            for (int j = 0; j < pageCopies; ++j) {
+                if (printer->printerState() == QPrinter::Aborted || printer->printerState() == QPrinter::Error) {
+                    return;
+                }
+
+                p.save();
+                p.translate(body.left(), body.top() - (page - 1) * body.height());
+                QRectF view(0, (page - 1) * body.height(), body.width(), body.height());
+
+                QAbstractTextDocumentLayout *layout = doc.documentLayout();
+                QAbstractTextDocumentLayout::PaintContext ctx;
+                p.setClipRect(view);
+                ctx.clip = view;
+                ctx.palette.setColor(QPalette::Text, Qt::black);
+                layout->draw(&p, ctx);
+
+                p.restore();
+
+                if (j < pageCopies - 1)
+                    printer->newPage();
+            }
+
+            if (page == toPage)
+                break;
+
+            if (ascending)
+                ++page;
+            else
+                --page;
+
+            printer->newPage();
+        }
+
+        if (i < docCopies - 1)
+            printer->newPage();
+    }
 }
 
 #include "salesordereditor.moc"
